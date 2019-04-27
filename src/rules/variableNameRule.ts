@@ -25,65 +25,67 @@ import { isLowerCase, isUpperCase } from "../utils";
 
 const BANNED_KEYWORDS = [
     "any",
+    "Boolean",
+    "boolean",
     "Number",
     "number",
     "String",
     "string",
-    "Boolean",
-    "boolean",
     "Undefined",
     "undefined",
 ];
 const bannedKeywordsSet = new Set(BANNED_KEYWORDS);
-const bannedKeywordsStr = BANNED_KEYWORDS.map(kw => `\`${kw}\``).join(", ");
+const bannedKeywordsStr = BANNED_KEYWORDS.map(bannedKeyword => `\`${bannedKeyword}\``).join(", ");
 
 const OPTION_LEADING_UNDERSCORE = "allow-leading-underscore";
 const OPTION_TRAILING_UNDERSCORE = "allow-trailing-underscore";
 const OPTION_BAN_KEYWORDS = "ban-keywords";
 const OPTION_CHECK_FORMAT = "check-format";
-const OPTION_REQUIRE_CONT_FOR_ALL_CAPS = "require-const-for-all-caps";
+const OPTION_REQUIRE_CONST_FOR_ALL_CAPS = "require-const-for-all-caps";
 const OPTION_ALLOW_PASCAL_CASE = "allow-pascal-case";
 const OPTION_ALLOW_SNAKE_CASE = "allow-snake-case";
 
 export class Rule extends Lint.Rules.AbstractRule {
     public static metadata: Lint.IRuleMetadata = {
-        ruleName: "variable-name",
         description: "Checks variable names for various errors.",
-        optionsDescription: Lint.Utils.dedent`
-            Six arguments may be optionally provided:
-
-            * \`"${OPTION_CHECK_FORMAT}"\`: allows only lowerCamelCased or UPPER_CASED variable names
-              * \`"${OPTION_LEADING_UNDERSCORE}"\` allows underscores at the beginning (only has an effect if "check-format" specified)
-              * \`"${OPTION_TRAILING_UNDERSCORE}"\` allows underscores at the end. (only has an effect if "check-format" specified)
-              * \`"${OPTION_REQUIRE_CONT_FOR_ALL_CAPS}"\`: enforces that all variables with UPPER_CASED names should be \`const\`.
-              * \`"${OPTION_ALLOW_PASCAL_CASE}"\` allows PascalCase in addition to lowerCamelCase.
-              * \`"${OPTION_ALLOW_SNAKE_CASE}"\` allows snake_case in addition to lowerCamelCase.
-            * \`"${OPTION_BAN_KEYWORDS}"\`: disallows the use of certain TypeScript keywords as variable or parameter names.
-              * These are: ${bannedKeywordsStr}`,
+        optionExamples: [
+            true,
+            [true, OPTION_BAN_KEYWORDS, OPTION_CHECK_FORMAT, OPTION_LEADING_UNDERSCORE],
+        ],
         options: {
-            type: "array",
             items: {
-                type: "string",
                 enum: [
                     OPTION_CHECK_FORMAT,
                     OPTION_LEADING_UNDERSCORE,
                     OPTION_TRAILING_UNDERSCORE,
+                    OPTION_REQUIRE_CONST_FOR_ALL_CAPS,
                     OPTION_ALLOW_PASCAL_CASE,
                     OPTION_ALLOW_SNAKE_CASE,
                     OPTION_BAN_KEYWORDS,
                 ],
+                uniqueItems: true,
             },
-            minLength: 0,
-            maxLength: 6,
+            type: "array",
         },
-        optionExamples: [[true, "ban-keywords", "check-format", "allow-leading-underscore"]],
+        optionsDescription: Lint.Utils.dedent`
+            Several arguments may be optionally provided:
+
+            * \`"${OPTION_CHECK_FORMAT}"\`: allows only lowerCamelCase and UPPER_CASE variable names.
+            * \`"${OPTION_LEADING_UNDERSCORE}"\`: allows underscores at the start (only takes effect if the "${OPTION_CHECK_FORMAT}" option is specified).
+            * \`"${OPTION_TRAILING_UNDERSCORE}"\`: allows underscores at the end (only takes effect if the "${OPTION_CHECK_FORMAT}" option is specified).
+            * \`"${OPTION_REQUIRE_CONST_FOR_ALL_CAPS}"\`: enforces that all variables UPPER_CASED should be \`const\`.
+            * \`"${OPTION_ALLOW_PASCAL_CASE}"\`: allows PascalCase in addition to lowerCamelCase.
+            * \`"${OPTION_ALLOW_SNAKE_CASE}"\`: allows snake_case in addition to lowerCamelCase.
+            * \`"${OPTION_BAN_KEYWORDS}"\`: disallows the use of certain TypeScript keywords as variable or parameter names.
+                * These are: ${bannedKeywordsStr}`,
+        ruleName: "variable-name",
         type: "style",
         typescriptOnly: false,
     };
 
-    public static KEYWORD_FAILURE = "variable name clashes with keyword/type";
-
-    public static FAILURE_STRING_CONST = "Only `const` variables may be UPPER_CASE.";
+    public static FAILURE_STRING_BAN_KEYWORDS = "Variable name clashes with keyword/type";
+    public static FAILURE_STRING_REQUIRE_CONST_FOR_ALL_CAPS =
+        "Only `const` variables may be UPPER_CASE.";
 
     public apply(sourceFile: ts.SourceFile): Lint.RuleFailure[] {
         return this.applyWithFunction(sourceFile, walk, parseOptions(this.ruleArguments));
@@ -99,6 +101,7 @@ interface Options {
     allowPascalCase: boolean;
     allowSnakeCase: boolean;
 }
+
 function parseOptions(ruleArguments: string[]): Options {
     const banKeywords = hasOption(OPTION_BAN_KEYWORDS);
     return {
@@ -107,7 +110,7 @@ function parseOptions(ruleArguments: string[]): Options {
         checkFormat: !banKeywords || hasOption(OPTION_CHECK_FORMAT),
         leadingUnderscore: hasOption(OPTION_LEADING_UNDERSCORE),
         trailingUnderscore: hasOption(OPTION_TRAILING_UNDERSCORE),
-        allCapsForConst: hasOption(OPTION_REQUIRE_CONT_FOR_ALL_CAPS),
+        allCapsForConst: hasOption(OPTION_REQUIRE_CONST_FOR_ALL_CAPS),
         allowPascalCase: hasOption(OPTION_ALLOW_PASCAL_CASE),
         allowSnakeCase: hasOption(OPTION_ALLOW_SNAKE_CASE),
     };
@@ -187,7 +190,7 @@ function walk(ctx: Lint.WalkContext<Options>): void {
 
     function handleVariableNameKeyword(name: ts.Identifier): void {
         if (options.banKeywords && bannedKeywordsSet.has(name.text)) {
-            ctx.addFailureAtNode(name, Rule.KEYWORD_FAILURE);
+            ctx.addFailureAtNode(name, Rule.FAILURE_STRING_BAN_KEYWORDS);
         }
     }
 
@@ -202,7 +205,7 @@ function walk(ctx: Lint.WalkContext<Options>): void {
         const text = node.name.text;
 
         if (isUpperCase(text) && !tsutils.isNodeFlagSet(declarationList, ts.NodeFlags.Const)) {
-            ctx.addFailureAtNode(node, Rule.FAILURE_STRING_CONST);
+            ctx.addFailureAtNode(node, Rule.FAILURE_STRING_REQUIRE_CONST_FOR_ALL_CAPS);
         }
     }
 
